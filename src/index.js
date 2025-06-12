@@ -31,6 +31,9 @@ export default {
 				case pathname.endsWith('/images/generations'):
 					assert(request.method === 'POST');
 					return handleImages(await request.json(), apiKey, env).catch(errHandler);
+				case pathname.endsWith('/files'):
+					assert(request.method === 'POST');
+					return handleFilesR2(request, env).catch(errHandler);
 				default:
 					throw new HttpError('404 Not Found', 404);
 			}
@@ -695,4 +698,110 @@ function toOpenAiStreamFlush(controller) {
 		}
 		controller.enqueue('data: [DONE]' + delimiter);
 	}
+}
+
+async function handleFiles(request, apiKey) {
+	// 获取form-data数据
+	const formData = await request.formData();
+	const file = formData.get('file');
+	const fileName = formData.get('fileName') || file.name;
+	const contentType = formData.get('contentType') || file.type;
+
+	if (!file) {
+		throw new HttpError('No file provided', 400);
+	}
+
+	// 准备上传文件的元数据
+	const metadata = {
+		file: {
+			display_name: fileName,
+		},
+	};
+
+	// 第一步：发起resumable上传请求
+	const initResponse = await fetch(`${BASE_URL}/upload/${API_VERSION}/files?key=${apiKey}`, {
+		method: 'POST',
+		headers: {
+			'X-Goog-Upload-Protocol': 'resumable',
+			'X-Goog-Upload-Command': 'start',
+			'X-Goog-Upload-Header-Content-Length': file.size.toString(),
+			'X-Goog-Upload-Header-Content-Type': contentType,
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify(metadata),
+	});
+
+	if (!initResponse.ok) {
+		throw new HttpError('Failed to initialize file upload', initResponse.status);
+	}
+
+	// 获取上传URL
+	const uploadUrl = initResponse.headers.get('x-goog-upload-url');
+	if (!uploadUrl) {
+		throw new HttpError('No upload URL provided', 500);
+	}
+
+	// 第二步：上传文件内容
+	const arrayBuffer = await file.arrayBuffer();
+	const uploadResponse = await fetch(uploadUrl, {
+		method: 'POST',
+		headers: {
+			'Content-Length': file.size.toString(),
+			'X-Goog-Upload-Offset': '0',
+			'X-Goog-Upload-Command': 'upload, finalize',
+		},
+		body: arrayBuffer,
+	});
+
+	if (!uploadResponse.ok) {
+		throw new HttpError('Failed to upload file', uploadResponse.status);
+	}
+
+	const result = await uploadResponse.json();
+	const { uri, sizeBytes, createTime, displayName } = result.file ?? {};
+	return new Response(
+		JSON.stringify({
+			id: uri,
+			object: 'file',
+			bytes: sizeBytes,
+			created_at: createTime,
+			filename: displayName,
+			purpose: 'assistants',
+		}),
+		fixCors({
+			status: 200,
+			headers: {
+				'Content-Type': 'application/json',
+			},
+		})
+	);
+}
+
+async function handleFilesR2(request, env) {
+	// 获取form-data数据
+	const formData = await request.formData();
+	const file = formData.get('file'); // binary data
+	const fileName = file.name;
+	const contentType = file.type;
+
+	const bucket = env.LLM_GEMINI_IMAGE;
+	const key = `${generateId()}.${contentType.split('/')[1] || 'png'}`;
+	await bucket.put(key, file);
+	const uri = `https://assets.photum.icu/${key}`;
+	return new Response(
+		JSON.stringify({
+			id: uri,
+			object: 'file',
+			bytes: file.size,
+			created_at: Date.now(),
+			filename: fileName,
+			purpose: 'assistants',
+		}),
+		fixCors({
+			status: 200,
+			headers: {
+				'Content-Type': 'application/json',
+			},
+		})
+	);
 }
