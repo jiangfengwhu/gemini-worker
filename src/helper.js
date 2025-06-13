@@ -33,7 +33,7 @@ export function getApiKey(request, env) {
 	return env.GOOGLE_AI_STUDIO_TOKEN;
 }
 
-export const BASE_URL = 'https://api-proxy.me/gemini';
+export const BASE_URL = 'https://rare-amoeba-85.deno.dev';
 
 export const toOpenAIImageResponse = async (data, env) => {
 	const { usageMetadata, candidates } = data ?? {};

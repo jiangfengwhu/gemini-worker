@@ -193,6 +193,8 @@ async function handleCompletions(req, apiKey) {
 	switch (true) {
 		case model.endsWith(':search'):
 			model = model.substring(0, model.length - 7);
+			body.tools = body.tools || [];
+			body.tools.push({ googleSearch: {} });
 		// eslint-disable-next-line no-fallthrough
 		case req.model.endsWith('-search-preview'):
 			body.tools = body.tools || [];
