@@ -36,6 +36,7 @@ export function getApiKey(request, env) {
 export const BASE_URL = 'https://rare-amoeba-85.deno.dev';
 
 export const toOpenAIImageResponse = async (data, env) => {
+	console.log('ORIGIN DATA', data);
 	const { usageMetadata, candidates } = data ?? {};
 	const part = candidates[0]['content']['parts'].find((part) => part.inlineData?.data);
 	const b64_json = part.inlineData.data;
